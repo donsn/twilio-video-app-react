@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useHistory } from 'react-router-dom';
-import { RoomType } from '../../types';
+
+const endpoint = process.env.REACT_APP_TOKEN_ENDPOINT || '/token';
 
 export function getPasscode() {
   const match = window.location.search.match(/passcode=(.*)&?/);
@@ -15,7 +16,7 @@ export function fetchToken(
   create_room = true,
   create_conversation = process.env.REACT_APP_DISABLE_TWILIO_CONVERSATIONS !== 'true'
 ) {
-  return fetch(`/token`, {
+  return fetch(endpoint, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -61,7 +62,6 @@ export default function usePasscodeAuth() {
 
   const [user, setUser] = useState<{ displayName: undefined; photoURL: undefined; passcode: string } | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
-  const [roomType, setRoomType] = useState<RoomType>();
 
   const getToken = useCallback(
     (name: string, room: string) => {
@@ -74,11 +74,31 @@ export default function usePasscodeAuth() {
           const errorMessage = getErrorMessage(json.error?.message || res.statusText);
           throw Error(errorMessage);
         })
-        .then(res => res.json())
-        .then(res => {
-          setRoomType(res.room_type);
-          return res.token as string;
-        });
+        .then(res => res.json());
+    },
+    [user]
+  );
+
+  const updateRecordingRules = useCallback(
+    async (room_sid, rules) => {
+      return fetch('/recordingrules', {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ room_sid, rules, passcode: user?.passcode }),
+        method: 'POST',
+      }).then(async res => {
+        const jsonResponse = await res.json();
+
+        if (!res.ok) {
+          const error = new Error(jsonResponse.error?.message || 'There was an error updating recording rules');
+          error.code = jsonResponse.error?.code;
+
+          return Promise.reject(error);
+        }
+
+        return jsonResponse;
+      });
     },
     [user]
   );
@@ -118,5 +138,5 @@ export default function usePasscodeAuth() {
     return Promise.resolve();
   }, []);
 
-  return { user, isAuthReady, getToken, signIn, signOut, roomType };
+  return { user, isAuthReady, getToken, signIn, signOut, updateRecordingRules };
 }
